@@ -1,9 +1,9 @@
-1.Yangi .env fayl oching.
-Unga:
+1.Open a new .env file.
+To him:
 I.BOT_TOKEN
 II.ADMINS
-degan o'zgaruvchilar yaratib qiymat bering.
-2.Kerakli kutubxonalarni o'rnating.
-Terminalga o'tib: pip install -r requirements.txt
-3.app.py faylini ishga tushiring.
-4.Behzod va uni jamoasiga rahmat aytish esdan chiqmasin!😉😉😉
+assign a value by creating variables called .
+2. Install the necessary libraries.
+Go to terminal: pip install -r requirements.txt
+3.Run the app.py file.
+4. Don't forget to thank Ulugbek Husainov and his team!
