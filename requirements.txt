@@ -1,0 +1,5 @@
+aiogram==3.4.1
+environs==10.3.0
+requests==2.31.0
+youtube-search==2.1.2
+youtube-search-python==1.6.6
