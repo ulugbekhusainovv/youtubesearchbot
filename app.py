@@ -4,6 +4,7 @@ from aiogram.types.bot_command_scope_all_private_chats import BotCommandScopeAll
 import asyncio
 from utils.notify_admins import start,shutdown
 from utils.set_botcommands import commands
+from middlewares.mymiddleware import UserCheckMiddleware
 # Info
 import logging
 import sys
@@ -13,6 +14,7 @@ async def main():
         await bot.set_my_commands(commands=commands,scope=BotCommandScopeAllPrivateChats(type='all_private_chats'))
         dp.startup.register(start)
         dp.shutdown.register(shutdown)
+        dp.message.middleware(UserCheckMiddleware())
         await dp.start_polling(bot)
     finally:
         await bot.session.close()
