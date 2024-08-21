@@ -34,7 +34,7 @@ async def check_sub(user_id):
 async def check_subscription(callback_query: types.CallbackQuery):
     is_subscribed = await check_sub(callback_query.from_user.id)
     if is_subscribed:
-        await bot.send_message(chat_id=callback_query.message.chat.id, text="Juda soz shungay davom eting")
+        await bot.send_message(chat_id=callback_query.message.chat.id, text="Keep it up!")
         await bot.delete_message(callback_query.message.chat.id, message_id=callback_query.message.message_id)
     else:
         await callback_query.answer("Please subscribe to our channels below, then you can use the bot", show_alert=True)
