@@ -6,7 +6,7 @@ from search import youtube_search
 import uuid,time
 from math import log,floor
 import sqlite3
-
+from filters import IsAdmin, IsBlocked
 
 
 def get_channels():
@@ -53,6 +53,19 @@ def views_format(number):
 
 
 
+@dp.inline_query(IsBlocked())
+async def inline_handler(inline_query: types.InlineQuery):
+    user_id = inline_query.from_user.id
+    if user_id:
+        await bot.answer_inline_query(
+            inline_query.id,
+            results=[],
+            switch_pm_text="You are blocked",
+            switch_pm_parameter="start"
+        )
+        return
+    
+
 @dp.inline_query()
 async def inline_handler(inline_query: types.InlineQuery):
     current_time = time.time()
@@ -91,3 +104,5 @@ async def inline_handler(inline_query: types.InlineQuery):
         )
     except:
         pass
+
+

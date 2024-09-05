@@ -1,3 +1,4 @@
+from .is_blocked import IsBlocked
 from .private_chat import IsPrivate
 from .is_admin import IsAdmin
 from .is_bot_admin import IsBotAdmin

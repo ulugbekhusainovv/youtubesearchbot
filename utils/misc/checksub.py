@@ -13,6 +13,11 @@ def get_channels():
     conn.close()
     return channels
 
+def is_user_blocked(user_id):
+    conn = sqlite3.connect('bot.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id FROM blocked_users WHERE user_id = ?", (user_id,))
+    return cursor.fetchone() is not None
 
 
 
@@ -69,4 +74,16 @@ async def joinchat(user_id):
         return True
     
 
+
+
+async def blocked_user(user_id):
+    uns = False
+    if is_user_blocked(user_id):
+        uns = True
+    if uns:
+        await bot.send_message(user_id, "You have been blocked by admins. To be unblocked, please contact our support.", parse_mode='html')
+        return False
+    else:
+        return True
+    
 

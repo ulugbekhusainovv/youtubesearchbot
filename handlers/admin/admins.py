@@ -36,8 +36,64 @@ def create_channel_table():
     conn.commit()
     conn.close()
 
-# Ensure the table is created at startup
 create_channel_table()
+
+def create_blocked_users_table():
+    conn = db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS blocked_users (
+            id INTEGER PRIMARY KEY,
+            user_id INTEGER,
+            registration_date TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+
+create_blocked_users_table()
+
+
+# User bloklanganmi yoki yo'qmi tekshirish
+def is_user_blocked(user_id):
+    conn = sqlite3.connect(DATABASE_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id FROM blocked_users WHERE user_id = ?", (user_id,))
+    return cursor.fetchone() is not None
+
+
+# Barcha bloklangan userlarni olish
+def get_blocked_users():
+    conn = sqlite3.connect(DATABASE_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM blocked_users")
+    blocked_users = cursor.fetchall()
+    conn.close()
+    return blocked_users
+
+
+def add_user_to_blocklist(user_id):
+    conn = sqlite3.connect(DATABASE_FILE)
+    cursor = conn.cursor()
+    if not is_user_blocked(user_id):
+        cursor.execute("INSERT INTO blocked_users (user_id) VALUES (?)", (user_id,))
+        conn.commit()
+        return True
+    return False
+
+
+def remove_user_from_blocklist(user_id):
+    conn = sqlite3.connect(DATABASE_FILE)
+    cursor = conn.cursor()
+    # Userni bloklanganlar ro'yxatida borligini tekshirish
+    if is_user_blocked(user_id):
+        # Agar user bloklangan bo'lsa, uni o'chirish
+        cursor.execute("DELETE FROM blocked_users WHERE user_id = ?", (user_id,))
+        conn.commit()
+        return True
+    return False
+
 
 
 def get_total_users():
@@ -78,6 +134,14 @@ def get_month_users():
 class AddChannel(StatesGroup):
     waiting_for_channel_id = State()
 
+class BlockUserState(StatesGroup):
+    waiting_for_user_id = State()
+
+
+class UnBlockUserState(StatesGroup):
+    waiting_for_user_id = State()
+
+
 @dp.message(Command('panel'), IsAdmin(), IsPrivate())
 async def admin_panel(message: types.Message):
     inline_keyboard = InlineKeyboardBuilder()
@@ -89,6 +153,10 @@ async def admin_panel(message: types.Message):
         InlineKeyboardButton(
             text="📢Kanallar ro'yxati",
             callback_data="list_channels"
+        ),
+        InlineKeyboardButton(
+            text="🦵Bloklanganlar",
+            callback_data="blocked_users"
         ),
         InlineKeyboardButton(
             text="❌",
@@ -110,6 +178,10 @@ async def back_to_admin_panel(callback_query: types.CallbackQuery):
         InlineKeyboardButton(
             text="📢Kanallar ro'yxati",
             callback_data="list_channels"
+        ),
+        InlineKeyboardButton(
+            text="🦵Bloklanganlar",
+            callback_data="blocked_users"
         ),
         InlineKeyboardButton(
             text="❌",
@@ -343,3 +415,93 @@ async def not_admin_statistic(message: types.Message):
         pass
     await message.reply("Siz admin emassiz!", disable_notification=True, protect_content=True)
 
+
+
+
+@dp.callback_query(lambda query: query.data.startswith("blocked_users"))
+async def blocked_users(callback_query: types.CallbackQuery):
+    users = get_blocked_users()
+    inline_keyboard = InlineKeyboardBuilder()
+    inline_keyboard.add(
+        InlineKeyboardButton(
+            text="➕Qo'shish",
+            callback_data="add_block_user"
+        )
+    )
+    inline_keyboard.add(
+        InlineKeyboardButton(
+            text="➖Olib tashlash",
+            callback_data="rm_block_user"
+        )
+    )
+    inline_keyboard.add(
+        InlineKeyboardButton(
+            text="⏪Orqaga",
+            callback_data="back_panel"
+        )
+    )
+
+    inline_keyboard.adjust(2)
+
+    if users:
+        blocked_list = "\n".join([f"ID: {user[0]} - {html.code(value=user[1])}" for user in users])
+        await callback_query.message.edit_text(f"Bloklangan userlar ro'yxati:\n\n{blocked_list}", reply_markup=inline_keyboard.as_markup())
+    else:
+        await callback_query.message.edit_text("Hech qanday bloklangan user yo'q.", reply_markup=inline_keyboard.as_markup())
+
+
+
+
+
+
+
+@dp.callback_query(lambda query: query.data.startswith("add_block_user"))
+async def add_block_user(callback_query: types.CallbackQuery, state: FSMContext):
+    await callback_query.message.answer("Bloklanishi kerak bo'lgan user ID sini kiriting:")
+
+    await state.set_state(BlockUserState.waiting_for_user_id)
+
+# Xabarni qayta ishlash va user_id ni olish
+@dp.message(BlockUserState.waiting_for_user_id)
+async def process_block_user_id(message: types.Message, state: FSMContext):
+    user_id = message.text.strip()
+    if not user_id.isdigit():
+        await message.answer("Iltimos, to'g'ri ID kiriting.")
+        return
+    
+    result = add_user_to_blocklist(user_id)
+    
+    if result:
+        await message.answer(f"User {user_id} bloklandi!")
+    else:
+        await message.answer(f"User {user_id} allaqachon bloklangan!")
+    
+    await state.clear()
+
+
+
+
+
+@dp.callback_query(lambda query: query.data.startswith("rm_block_user"))
+async def rm_block_user(callback_query: types.CallbackQuery, state: FSMContext):
+    await callback_query.message.answer("Blokdan chiqishi kerak bo'lgan user ID sini kiriting:")
+
+    await state.set_state(UnBlockUserState.waiting_for_user_id)
+
+
+
+@dp.message(UnBlockUserState.waiting_for_user_id)
+async def process_unblock_user(message: types.Message, state: FSMContext):
+    user_id = message.text.strip()
+    if not user_id.isdigit():
+        await message.answer("Iltimos, to'g'ri ID kiriting.")
+        return
+    
+    result = remove_user_from_blocklist(user_id)
+    
+    if result:
+        await message.answer("User blokdan chiqarildi!")
+    else:
+        await message.answer("User bloklanmagan edi!")
+
+    await state.clear()

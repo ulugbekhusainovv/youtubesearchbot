@@ -4,6 +4,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 import sqlite3
 from datetime import datetime
 from aiogram.types import  InlineKeyboardButton,InlineKeyboardMarkup
+from filters import IsAdmin
 conn = sqlite3.connect('bot.db')
 cursor = conn.cursor()
 
