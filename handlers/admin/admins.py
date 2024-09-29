@@ -11,7 +11,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters.callback_data import CallbackData
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-
+from keyboards.inline.buttons import blocked_users_list_button, BlockedUsersListPaginatorCallback,page_size
 
 DATABASE_FILE = "bot.db"
 
@@ -44,6 +44,7 @@ def create_blocked_users_table():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS blocked_users (
             id INTEGER PRIMARY KEY,
+            fullname TEXT NULL,
             user_id INTEGER,
             registration_date TEXT
         )
@@ -54,7 +55,25 @@ def create_blocked_users_table():
 
 create_blocked_users_table()
 
+def get_blocked_user(user_id):
+    conn = db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT * FROM blocked_users WHERE user_id = ?
+    ''', (user_id,))
+    user = cursor.fetchone()
+    conn.close()
+    return user
 
+def get_user_full_name(user_id):
+    conn = sqlite3.connect(DATABASE_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT full_name FROM users WHERE telegram_id = ?", (user_id,))
+    result = cursor.fetchone()
+    conn.close()
+    if result:
+        return result[0]
+    return None
 # User bloklanganmi yoki yo'qmi tekshirish
 def is_user_blocked(user_id):
     conn = sqlite3.connect(DATABASE_FILE)
@@ -62,7 +81,18 @@ def is_user_blocked(user_id):
     cursor.execute("SELECT user_id FROM blocked_users WHERE user_id = ?", (user_id,))
     return cursor.fetchone() is not None
 
-
+def is_valid_user(user_id):
+    connection = sqlite3.connect(DATABASE_FILE)
+    cursor = connection.cursor()
+    try:
+        cursor.execute("SELECT COUNT(*) FROM users WHERE telegram_id = ?", (user_id,))
+        result = cursor.fetchone()
+        return result[0] > 0
+    except Exception as e:
+        print(f"Xatolik: {e}")
+        return False
+    finally:
+        connection.close()
 # Barcha bloklangan userlarni olish
 def get_blocked_users():
     conn = sqlite3.connect(DATABASE_FILE)
@@ -73,11 +103,11 @@ def get_blocked_users():
     return blocked_users
 
 
-def add_user_to_blocklist(user_id):
+def add_user_to_blocklist(user_id, full_name, registration_date):
     conn = sqlite3.connect(DATABASE_FILE)
     cursor = conn.cursor()
     if not is_user_blocked(user_id):
-        cursor.execute("INSERT INTO blocked_users (user_id) VALUES (?)", (user_id,))
+        cursor.execute("INSERT INTO blocked_users (fullname, user_id, registration_date) VALUES (?,?,?)", (full_name,user_id,registration_date,))
         conn.commit()
         return True
     return False
@@ -216,7 +246,6 @@ async def add_channel_start(callback_query: types.CallbackQuery, state: FSMConte
             [
                 InlineKeyboardButton(text="⏪Orqaga", callback_data="back_panel")
             ]
-            
         ]
     )
     await callback_query.message.edit_text("<b>Kanal yoki guruhni ulash uchun ID ni yoki Xabarni yuboring\nKanal ulashdan avval botni Admin  ekanligini tekshiring</b>", reply_markup=add_group_button)
@@ -420,39 +449,59 @@ async def not_admin_statistic(message: types.Message):
 
 @dp.callback_query(lambda query: query.data.startswith("blocked_users"))
 async def blocked_users(callback_query: types.CallbackQuery):
-    users = get_blocked_users()
     inline_keyboard = InlineKeyboardBuilder()
-    inline_keyboard.add(
-        InlineKeyboardButton(
-            text="➕Qo'shish",
-            callback_data="add_block_user"
-        )
-    )
-    inline_keyboard.add(
-        InlineKeyboardButton(
-            text="➖Olib tashlash",
-            callback_data="rm_block_user"
-        )
-    )
-    inline_keyboard.add(
-        InlineKeyboardButton(
-            text="⏪Orqaga",
-            callback_data="back_panel"
-        )
-    )
+    try:
+        callback_data_parts = callback_query.data.split('_')
+        if len(callback_data_parts) > 2 and callback_data_parts[-1].isdigit():
+            page = int(callback_data_parts[-1])
+        else:
+            page = 0
 
-    inline_keyboard.adjust(2)
+        blocked_users = get_blocked_users()
+        if blocked_users:
+            await callback_query.message.edit_text(
+                text="Bloklanganlar ro'yxati",
+                reply_markup=blocked_users_list_button(page=page)
+            )
+        else:
+            inline_keyboard.add(
+                InlineKeyboardButton(
+                    text="Qo'shish",
+                    callback_data="add_block_user"
+                )
+            )
+            inline_keyboard.add(
+                InlineKeyboardButton(
+                    text="⏪ Orqaga",
+                    callback_data="back_panel"
+                )
+            )
+            inline_keyboard.adjust(1)
+            await callback_query.message.edit_text(
+                text="Bloklangan foydalanuvchilar topilmadi.",
+                reply_markup=inline_keyboard.as_markup()
+            )
 
-    if users:
-        blocked_list = "\n".join([f"ID: {user[0]} - {html.code(value=user[1])}" for user in users])
-        await callback_query.message.edit_text(f"Bloklangan userlar ro'yxati:\n\n{blocked_list}", reply_markup=inline_keyboard.as_markup())
+    except Exception as error:
+        await callback_query.answer(f"Xatolik: {error}", show_alert=True)
+
+
+@dp.callback_query(BlockedUsersListPaginatorCallback.filter())
+async def blocked_user_paginator_edit(callback_query: types.CallbackQuery, callback_data: BlockedUsersListPaginatorCallback):
+    page = int(callback_data.page)
+    action = callback_data.action
+    length = int(callback_data.length)
+    if action == 'next':
+        if (page+1)*page_size >=length:
+            page = page
+        else:
+            page += 1
     else:
-        await callback_query.message.edit_text("Hech qanday bloklangan user yo'q.", reply_markup=inline_keyboard.as_markup())
-
-
-
-
-
+        if page > 0:
+            page = page - 1
+        else:
+            page=page
+    await callback_query.message.edit_text(text=f"Bloklanganlar ro'yxati", reply_markup=blocked_users_list_button(page=page))
 
 
 @dp.callback_query(lambda query: query.data.startswith("add_block_user"))
@@ -465,21 +514,28 @@ async def add_block_user(callback_query: types.CallbackQuery, state: FSMContext)
 @dp.message(BlockUserState.waiting_for_user_id)
 async def process_block_user_id(message: types.Message, state: FSMContext):
     user_id = message.text.strip()
+    inline_keyboard = InlineKeyboardBuilder()
+
     if not user_id.isdigit():
         await message.answer("Iltimos, to'g'ri ID kiriting.")
         return
     
-    result = add_user_to_blocklist(user_id)
-    
+    full_name = get_user_full_name(user_id)
+    registration_date = message.date.strftime('%Y-%m-%d %H:%M:%S')
+    result = add_user_to_blocklist(user_id, full_name, registration_date)
+
+    inline_keyboard.add(
+        InlineKeyboardButton(
+            text="Qo'shish",
+            callback_data="add_block_user"
+        )
+    )
     if result:
-        await message.answer(f"User {user_id} bloklandi!")
+        await message.answer(f"User {user_id} bloklandi!",reply_markup=inline_keyboard.as_markup())
     else:
-        await message.answer(f"User {user_id} allaqachon bloklangan!")
+        await message.answer(f"User {user_id} allaqachon bloklangan!",reply_markup=inline_keyboard.as_markup())
     
     await state.clear()
-
-
-
 
 
 @dp.callback_query(lambda query: query.data.startswith("rm_block_user"))
@@ -505,3 +561,77 @@ async def process_unblock_user(message: types.Message, state: FSMContext):
         await message.answer("User bloklanmagan edi!")
 
     await state.clear()
+
+
+
+
+@dp.callback_query(lambda query: query.data.startswith("block_user_"))
+async def block_user_data(callback_query: types.CallbackQuery):
+    data_parts = callback_query.data.split('_')
+    block_user_id = int(data_parts[-1])
+    page = int(data_parts[-2]) if len(data_parts) > 2 else 0
+    inline_keyboard = InlineKeyboardBuilder()
+    blocked_user = get_blocked_user(block_user_id)
+
+    try:
+        if blocked_user:
+            if is_valid_user(blocked_user[2]):
+                inline_keyboard.add(
+                    InlineKeyboardButton(
+                        text=f"Id: {blocked_user[2]}",
+                        url=f"tg://user?id={blocked_user[2]}"
+                    )
+                )
+            else:
+                inline_keyboard.add(
+                    InlineKeyboardButton(
+                        text="Foydalanuvchi topilmadi",
+                        callback_data="no_user_found"
+                    )
+                )
+        else:
+            inline_keyboard.add(
+                InlineKeyboardButton(
+                    text="Foydalanuvchi topilmadi",
+                    callback_data="no_user_found"
+                )
+            )
+        inline_keyboard.add(
+            InlineKeyboardButton(
+                text="Blokdan chiqarish",
+                callback_data=f"unblock_user_{page}_{block_user_id}"
+            )
+        )
+
+        inline_keyboard.add(
+            InlineKeyboardButton(
+                text="⏪ orqaga",
+                callback_data=f"blocked_users_{page}"
+            )
+        )
+        inline_keyboard.adjust(1)
+
+
+        if blocked_user:
+            await callback_query.message.edit_text(f"User ma'lumoti: {blocked_user[1]},\nUser ID: {html.code(value=blocked_user[2])},\nRegistration Date: {blocked_user[3]}",reply_markup=inline_keyboard.as_markup())
+        else:
+            await callback_query.message.edit_text(
+                "Foydalanuvchi topilmadi.",
+            )
+
+    except Exception as error:
+        await callback_query.message.edit_text(f"Xatolik: {error}", reply_markup=inline_keyboard.as_markup())
+
+
+@dp.callback_query(lambda query: query.data.startswith("unblock_user_"))
+async def unblock_user_clq(callback_query: types.CallbackQuery):
+    data_parts = callback_query.data.split('_')
+    user_id = int(data_parts[-1])
+    page = int(data_parts[-2]) if len(data_parts) > 2 else 0
+    result = remove_user_from_blocklist(user_id)
+    if result:
+        await callback_query.answer("User blokdan chiqarildi!",show_alert=True)
+        await callback_query.message.edit_text(text="Bloklanganlar ro'yxati", reply_markup=blocked_users_list_button(page=page))
+
+    else:
+        await callback_query.answer("User bloklanmagan edi!",show_alert=True)

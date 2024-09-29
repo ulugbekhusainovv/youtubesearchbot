@@ -43,9 +43,11 @@ async def start_bot(message:types.Message):
     is_premium = message.from_user.is_premium
     username = message.from_user.username
 
+    max_length = 20
+    full_name = (full_name[:max_length] + '...') if len(full_name) > max_length else full_name
+
     if not await is_user_registered(telegram_id):
         registration_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
         cursor.execute('''
             INSERT INTO users (username,full_name,telegram_id,registration_date)
             VALUES (?, ?, ?, ?)
