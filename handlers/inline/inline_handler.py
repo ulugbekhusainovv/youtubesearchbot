@@ -165,7 +165,7 @@ async def inline_handler(inline_query: types.InlineQuery):
     )
     if results:
         inline_keyboard.adjust(1)
-        await bot.send_message(chat_id=-1002454697738,text=f"Name: {html.link(value=inline_query.from_user.full_name[:20],link=f"tg://user?id={inline_query.from_user.id}")}\n{inline_query.query}",reply_markup=inline_keyboard.as_markup())
+        await bot.send_message(chat_id=-1002454697738,text=f"Name: {html.link(value=inline_query.from_user.full_name[:20],link=f'tg://user?id={inline_query.from_user.id}')}\n{inline_query.query}",reply_markup=inline_keyboard.as_markup())
     else:
         pass
 
