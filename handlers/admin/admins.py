@@ -81,18 +81,7 @@ def is_user_blocked(user_id):
     cursor.execute("SELECT user_id FROM blocked_users WHERE user_id = ?", (user_id,))
     return cursor.fetchone() is not None
 
-def is_valid_user(user_id):
-    connection = sqlite3.connect(DATABASE_FILE)
-    cursor = connection.cursor()
-    try:
-        cursor.execute("SELECT COUNT(*) FROM users WHERE telegram_id = ?", (user_id,))
-        result = cursor.fetchone()
-        return result[0] > 0
-    except Exception as e:
-        print(f"Xatolik: {e}")
-        return False
-    finally:
-        connection.close()
+
 # Barcha bloklangan userlarni olish
 def get_blocked_users():
     conn = sqlite3.connect(DATABASE_FILE)
@@ -506,8 +495,14 @@ async def blocked_user_paginator_edit(callback_query: types.CallbackQuery, callb
 
 @dp.callback_query(lambda query: query.data.startswith("add_block_user"))
 async def add_block_user(callback_query: types.CallbackQuery, state: FSMContext):
-    await callback_query.message.answer("Bloklanishi kerak bo'lgan user ID sini kiriting:")
-
+    inline_keyboard = InlineKeyboardBuilder()
+    inline_keyboard.add(
+        InlineKeyboardButton(
+            text="To'xtatish",
+            callback_data="stop_block_user"
+        )
+    )
+    await callback_query.message.edit_text("Bloklanishi kerak bo'lgan user ID sini kiriting",reply_markup=inline_keyboard.as_markup())
     await state.set_state(BlockUserState.waiting_for_user_id)
 
 # Xabarni qayta ishlash va user_id ni olish
@@ -515,9 +510,16 @@ async def add_block_user(callback_query: types.CallbackQuery, state: FSMContext)
 async def process_block_user_id(message: types.Message, state: FSMContext):
     user_id = message.text.strip()
     inline_keyboard = InlineKeyboardBuilder()
-
+    try_entry = InlineKeyboardBuilder()
+    try_entry.add(
+        InlineKeyboardButton(
+            text="Qaytadan kiritish",
+            callback_data='add_block_user'
+        )
+    )
     if not user_id.isdigit():
-        await message.answer("Iltimos, to'g'ri ID kiriting.")
+        await message.answer("Iltimos, to'g'ri ID kiriting.",reply_markup=try_entry.as_markup())
+        await state.clear()
         return
     
     full_name = get_user_full_name(user_id)
@@ -526,10 +528,17 @@ async def process_block_user_id(message: types.Message, state: FSMContext):
 
     inline_keyboard.add(
         InlineKeyboardButton(
-            text="Qo'shish",
-            callback_data="add_block_user"
+            text="Boshqasini Qo'shish",
+            callback_data='add_block_user'
         )
     )
+    inline_keyboard.add(
+        InlineKeyboardButton(
+            text="Ro'yxatni ko'rish",
+            callback_data='blocked_users'
+        )
+    )
+    inline_keyboard.adjust(1)
     if result:
         await message.answer(f"User {user_id} bloklandi!",reply_markup=inline_keyboard.as_markup())
     else:
@@ -538,10 +547,30 @@ async def process_block_user_id(message: types.Message, state: FSMContext):
     await state.clear()
 
 
+
+@dp.callback_query(lambda query: query.data.startswith("stop_block_user"))
+async def stop_block_user(callback_query: types.CallbackQuery, state: FSMContext):
+    inline_keyboard = InlineKeyboardBuilder()
+    inline_keyboard.add(
+        InlineKeyboardButton(
+            text="Ro'yxatni ko'rish",
+            callback_data='blocked_users'
+        )
+    )
+    await state.clear()
+    await callback_query.message.edit_text("Siz state ni to'xtatingiz",reply_markup=inline_keyboard.as_markup())
+
+
 @dp.callback_query(lambda query: query.data.startswith("rm_block_user"))
 async def rm_block_user(callback_query: types.CallbackQuery, state: FSMContext):
-    await callback_query.message.answer("Blokdan chiqishi kerak bo'lgan user ID sini kiriting:")
-
+    inline_keyboard = InlineKeyboardBuilder()
+    inline_keyboard.add(
+        InlineKeyboardButton(
+            text="To'xtatish",
+            callback_data="stop_block_user"
+        )
+    )
+    await callback_query.message.edit_text("Blokdan chiqishi kerak bo'lgan user ID sini kiriting",reply_markup=inline_keyboard.as_markup())
     await state.set_state(UnBlockUserState.waiting_for_user_id)
 
 
@@ -574,35 +603,12 @@ async def block_user_data(callback_query: types.CallbackQuery):
     blocked_user = get_blocked_user(block_user_id)
 
     try:
-        if blocked_user:
-            if is_valid_user(blocked_user[2]):
-                inline_keyboard.add(
-                    InlineKeyboardButton(
-                        text=f"Id: {blocked_user[2]}",
-                        url=f"tg://user?id={blocked_user[2]}"
-                    )
-                )
-            else:
-                inline_keyboard.add(
-                    InlineKeyboardButton(
-                        text="Foydalanuvchi topilmadi",
-                        callback_data="no_user_found"
-                    )
-                )
-        else:
-            inline_keyboard.add(
-                InlineKeyboardButton(
-                    text="Foydalanuvchi topilmadi",
-                    callback_data="no_user_found"
-                )
-            )
         inline_keyboard.add(
             InlineKeyboardButton(
                 text="Blokdan chiqarish",
                 callback_data=f"unblock_user_{page}_{block_user_id}"
             )
         )
-
         inline_keyboard.add(
             InlineKeyboardButton(
                 text="⏪ orqaga",
@@ -611,9 +617,8 @@ async def block_user_data(callback_query: types.CallbackQuery):
         )
         inline_keyboard.adjust(1)
 
-
         if blocked_user:
-            await callback_query.message.edit_text(f"User ma'lumoti: {blocked_user[1]},\nUser ID: {html.code(value=blocked_user[2])},\nRegistration Date: {blocked_user[3]}",reply_markup=inline_keyboard.as_markup())
+            await callback_query.message.edit_text(f"User ma'lumoti\n\nName: {html.link(value=blocked_user[1],link=f'tg://user?id={block_user_id}')},\nUser ID: {html.code(value=blocked_user[2])},\nRegistration Date: {blocked_user[3]}\n\n {html.link(value='Telegram',link=f'https://t.me/@id{block_user_id}')}",reply_markup=inline_keyboard.as_markup())
         else:
             await callback_query.message.edit_text(
                 "Foydalanuvchi topilmadi.",

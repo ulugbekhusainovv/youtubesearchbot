@@ -79,4 +79,5 @@ def blocked_users_list_button(page:int=0):
         return btn.as_markup()
     else:
         btn.row(InlineKeyboardButton(text="Topilmadi", callback_data='back_panel'))
+        btn.row(InlineKeyboardButton(text="Qo'shish", callback_data='add_block_user'))
         return btn.as_markup()
